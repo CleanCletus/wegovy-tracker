@@ -16,8 +16,8 @@
 <style>
 html,body{margin:0;padding:0;background:var(--bg-outer);-webkit-font-smoothing:antialiased}
 *{box-sizing:border-box}
-:root{--bg:#f7f3ec;--bg-outer:#efe9df;--card:#fffdf9;--chip:#f7f3ec;--chip2:#f2ece2;--ink:#2a2724;--ink2:#857d72;--ink3:#a09587;--axis:#b3a897;--line:#e6ded1;--line2:#ece4d8;--teal:#2f7d7b;--teal-hover:#276866;--teal-soft:#eef3f2;--amber:#d99a3c;--amber-bg:#fbf1e0;--amber-ink:#a9752a;--green:#5f7f4c;--red:#b0674f;--red2:#c2735a;--prior:#c9c0b0;--pill:#2a2724;--on-pill:#f7f3ec;--on-teal:#fffdf9;color-scheme:light}
-html[data-theme="dark"]{--bg:#161b1a;--bg-outer:#0e1211;--card:#1e2423;--chip:#262d2b;--chip2:#2c3331;--ink:#ece7de;--ink2:#a9a39a;--ink3:#716c65;--axis:#5b6461;--line:#333b39;--line2:#29312f;--teal:#4aa5a2;--teal-hover:#3d8f8d;--teal-soft:#223230;--amber:#dfa04d;--amber-bg:#3a2e1a;--amber-ink:#e3b261;--green:#93b077;--red:#d18a72;--red2:#d6957e;--prior:#5b6461;--pill:#ece7de;--on-pill:#161b1a;--on-teal:#0e1413;color-scheme:dark}
+:root{--bg:#f7f3ec;--bg-outer:#efe9df;--card:#fffdf9;--chip:#f7f3ec;--chip2:#f2ece2;--ink:#2a2724;--ink2:#857d72;--ink3:#a09587;--axis:#b3a897;--line:#e6ded1;--line2:#ece4d8;--teal:#2f7d7b;--teal-hover:#276866;--teal-soft:#eef3f2;--amber:#d99a3c;--amber-bg:#fbf1e0;--amber-ink:#a9752a;--green:#5f7f4c;--red:#b0674f;--red2:#c2735a;--prior:#c9c0b0;--pill:#2a2724;--on-pill:#f7f3ec;--on-teal:#fffdf9;--nav-bg:rgba(247,243,236,.92);color-scheme:light}
+html[data-theme="dark"]{--bg:#161b1a;--bg-outer:#0e1211;--card:#1e2423;--chip:#262d2b;--chip2:#2c3331;--ink:#ece7de;--ink2:#a9a39a;--ink3:#716c65;--axis:#5b6461;--line:#333b39;--line2:#29312f;--teal:#4aa5a2;--teal-hover:#3d8f8d;--teal-soft:#223230;--amber:#dfa04d;--amber-bg:#3a2e1a;--amber-ink:#e3b261;--green:#93b077;--red:#d18a72;--red2:#d6957e;--prior:#5b6461;--pill:#ece7de;--on-pill:#161b1a;--on-teal:#0e1413;--nav-bg:rgba(22,27,26,.92);color-scheme:dark}
 a{color:var(--teal)}a:hover{color:var(--teal-hover)}
 input,select,textarea,button{font-family:inherit}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
@@ -280,7 +280,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 
 </main>
 
-<nav style="position:sticky;bottom:0;display:flex;gap:6px;padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:rgba(247,243,236,.92);backdrop-filter:blur(12px);border-top:1px solid var(--line)">
+<nav style="position:sticky;bottom:0;display:flex;gap:6px;padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:var(--nav-bg);backdrop-filter:blur(12px);border-top:1px solid var(--line)">
 <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
 <button onClick="{{ t.onClick }}" style="flex:1;border:none;border-radius:11px;padding:11px 0;cursor:pointer;font:500 12px/1 'Instrument Sans',sans-serif;transition:all .18s ease;background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</button>
 </sc-for>
