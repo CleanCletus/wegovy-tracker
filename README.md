@@ -4,6 +4,7 @@ A small weight/dose tracker for a GLP-1 restart (Wegovy). Runs as a static site 
 
 - **Live site:** https://cleancletus.github.io/wegovy-tracker/
 - **How it works:** `index.html` redirects to `Restart Tracker.dc.html`, the app (a "Design Component" rendered by the `support.js` runtime, with React loaded from unpkg). The service worker (`sw.js`) caches the app for offline use after the first visit.
+- **Appearance:** tap the **System / Light / Dark** button in the top-right corner to switch themes. **System** (the default) follows your device's light/dark setting, and your choice is remembered.
 
 ## Cloud sync (back up across devices)
 
