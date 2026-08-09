@@ -443,6 +443,7 @@ class Component extends DCLogic {
 
   async componentDidMount() {
     await store.init();
+    this._deleted = (await store.meta('gh_deleted')) || {};
     let entries = await store.all();
     if (!entries.length) { entries = seedEntries(); await store.put(entries); }
     const pen = await store.meta('penLeft');
@@ -502,6 +503,8 @@ class Component extends DCLogic {
     if (this._confirm !== id) { this._confirm = id; this.forceUpdate(); setTimeout(() => { if (this._confirm === id) { this._confirm = null; this.forceUpdate(); } }, 3000); return; }
     this._confirm = null;
     await store.del(id);
+    this._deleted[id] = Date.now();
+    await store.meta('gh_deleted', this._deleted);
     this.setState(s => ({ entries: s.entries.filter(e => e.id !== id) }));
     this.flash('Entry deleted');
     this.syncIfConnected();
@@ -602,7 +605,7 @@ class Component extends DCLogic {
     this.setState({ syncStatus: 'off', syncUser: '', syncMsg: 'Disconnected' });
     this.flash('Cloud sync disconnected');
   }
-  mergeEntries(remote, local) {
+  mergeEntries(remote, local, deleted) {
     const map = new Map();
     const add = e => {
       const cur = map.get(e.id);
@@ -611,7 +614,9 @@ class Component extends DCLogic {
     };
     (remote || []).forEach(add);
     (local || []).forEach(add);
-    return [...map.values()];
+    let out = [...map.values()];
+    if (deleted) out = out.filter(e => !(deleted[e.id] >= (e.updatedAt || 0)));
+    return out;
   }
   async syncNow() {
     const token = await store.meta('gh_token');
@@ -634,12 +639,25 @@ class Component extends DCLogic {
       } else if (res.status !== 404) {
         throw new Error('pull failed (' + res.status + ')');
       }
-      const merged = this.mergeEntries(remote && remote.entries, this.state.entries);
+      const remoteDeleted = (remote && remote.deleted) || {};
+      const combined = {};
+      for (const id of new Set([...Object.keys(remoteDeleted), ...Object.keys(this._deleted || {})])) {
+        combined[id] = Math.max(remoteDeleted[id] || 0, (this._deleted || {})[id] || 0);
+      }
+      const merged = this.mergeEntries(remote && remote.entries, this.state.entries, combined);
+      const remoteIds = new Set(((remote && remote.entries) || []).map(e => e.id));
+      const mergedIds = new Set(merged.map(e => e.id));
+      const newDeleted = {};
+      for (const id in combined) {
+        if (!mergedIds.has(id) && remoteIds.has(id)) newDeleted[id] = combined[id];
+      }
+      this._deleted = newDeleted;
+      await store.meta('gh_deleted', newDeleted);
       this.setState({ entries: merged });
       await store.put(merged);
       const body = {
         message: 'sync ' + new Date().toISOString(),
-        content: this.b64Enc(JSON.stringify({ version: 1, entries: merged, updatedAt: Date.now() }))
+        content: this.b64Enc(JSON.stringify({ version: 2, entries: merged, deleted: this._deleted || {}, updatedAt: Date.now() }))
       };
       if (sha) body.sha = sha;
       const p = await fetch(url, { method: 'PUT', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
