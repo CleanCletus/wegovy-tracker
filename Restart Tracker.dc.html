@@ -116,6 +116,45 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div>
 </section>
 
+<section style="margin-top:12px;background:#fffdf9;border:1px solid #e6ded1;border-radius:14px;padding:15px 14px">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#a09587">Cloud sync</div>
+<span style="font:500 10px/1 'JetBrains Mono',monospace;color:{{ sync.badgeColor }}">{{ sync.badge }}</span>
+</div>
+
+<sc-if value="{{ sync.off }}" hint-placeholder-val="{{ true }}">
+<p style="margin:11px 0 0;font:400 11.5px/1.5 'Instrument Sans',sans-serif;color:#857d72">Back up your entries to a private GitHub repo so your phone and computer stay in sync. Free and private.</p>
+<div style="margin-top:12px">
+<label style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#a09587">Fine-grained access token</label>
+<input type="password" placeholder="github_pat_…" value="{{ sync.token }}" onChange="{{ sync.onToken }}" style="width:100%;margin-top:6px;padding:9px;border:1px solid #e6ded1;border-radius:9px;background:#f7f3ec;font:500 12px 'JetBrains Mono',monospace;color:#2a2724">
+</div>
+<div style="margin-top:10px">
+<label style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:#a09587">Data repo name</label>
+<input type="text" value="{{ sync.repoName }}" onChange="{{ sync.onRepoName }}" style="width:100%;margin-top:6px;padding:9px;border:1px solid #e6ded1;border-radius:9px;background:#f7f3ec;font:500 12px 'JetBrains Mono',monospace;color:#2a2724">
+</div>
+<button onClick="{{ sync.onConnect }}" style="margin-top:12px;width:100%;padding:12px;border-radius:11px;border:none;background:#2f7d7b;color:#fffdf9;font:600 13px/1 'Instrument Sans',sans-serif;cursor:pointer" style-hover="background:#276866">Connect</button>
+<sc-if value="{{ sync.msg }}">
+<p style="margin:10px 0 0;font:400 11px/1.4 'Instrument Sans',sans-serif;color:#b0674f">{{ sync.msg }}</p>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{ sync.connecting }}" hint-placeholder-val="{{ false }}">
+<p style="margin:11px 0 0;font:400 11.5px/1.5 'Instrument Sans',sans-serif;color:#857d72">Connecting…</p>
+</sc-if>
+
+<sc-if value="{{ sync.on }}" hint-placeholder-val="{{ false }}">
+<div style="margin-top:12px;display:flex;align-items:center;gap:8px">
+<span style="width:8px;height:8px;border-radius:50%;background:#5f7f4c;flex:none"></span>
+<span style="font:500 12px/1.4 'Instrument Sans',sans-serif;color:#2a2724">Syncing as @{{ sync.user }}</span>
+</div>
+<div style="margin-top:7px;font:400 11.5px/1.5 'Instrument Sans',sans-serif;color:#857d72">{{ sync.msg }}</div>
+<div style="display:flex;gap:8px;margin-top:12px">
+<button onClick="{{ sync.onSyncNow }}" style="flex:1;padding:11px;border-radius:11px;border:none;background:#2f7d7b;color:#fffdf9;font:600 12.5px/1 'Instrument Sans',sans-serif;cursor:pointer" style-hover="background:#276866">Sync now</button>
+<button onClick="{{ sync.onDisconnect }}" style="flex:1;padding:11px;border-radius:11px;border:1px solid #e6ded1;background:#fffdf9;color:#c2735a;font:500 12.5px/1 'Instrument Sans',sans-serif;cursor:pointer" style-hover="border-color:#c2735a">Disconnect</button>
+</div>
+</sc-if>
+</section>
+
 </div>
 </sc-if>
 
@@ -389,7 +428,13 @@ class Component extends DCLogic {
     tipIdx: null,
     toast: '',
     loaded: false,
-    form: this.blankForm()
+    form: this.blankForm(),
+    syncStatus: 'off',
+    syncUser: '',
+    syncMsg: '',
+    syncLast: '',
+    syncToken: '',
+    syncRepoName: 'wegovy-tracker-data'
   };
 
   blankForm() {
@@ -402,6 +447,14 @@ class Component extends DCLogic {
     if (!entries.length) { entries = seedEntries(); await store.put(entries); }
     const pen = await store.meta('penLeft');
     this.setState({ entries, penLeft: pen == null ? PEN_CLICKS : pen, loaded: true });
+    const tok = await store.meta('gh_token');
+    if (tok) {
+      const user = await store.meta('gh_user');
+      const repo = await store.meta('gh_repo_name');
+      const last = await store.meta('gh_last');
+      this.setState({ syncStatus: 'connected', syncUser: user || '', syncRepoName: repo || 'wegovy-tracker-data', syncLast: last || '', syncToken: tok });
+      this.syncNow();
+    }
   }
 
   flash(msg) {
@@ -427,7 +480,8 @@ class Component extends DCLogic {
       food_noise: f.noise,
       gi_symptoms: f.symptoms,
       notes: f.notes,
-      is_historical: false
+      is_historical: false,
+      updatedAt: Date.now()
     };
     const prev = this.state.entries.find(e => e.id === entry.id);
     const spent = prev ? f.clicks - (prev.dose_clicks || 0) : f.clicks;
@@ -441,6 +495,7 @@ class Component extends DCLogic {
       view: 'dashboard'
     }));
     this.flash(prev ? 'Entry updated' : 'Logged · ' + mg.toFixed(2) + ' mg');
+    this.syncIfConnected();
   }
 
   async remove(id) {
@@ -449,6 +504,7 @@ class Component extends DCLogic {
     await store.del(id);
     this.setState(s => ({ entries: s.entries.filter(e => e.id !== id) }));
     this.flash('Entry deleted');
+    this.syncIfConnected();
   }
 
   edit(e) {
@@ -490,7 +546,8 @@ class Component extends DCLogic {
         food_noise: c[3] ? parseInt(c[3]) : null,
         gi_symptoms: c[4] ? c[4].split('|').filter(Boolean) : [],
         notes: c[5] || '',
-        is_historical: true
+        is_historical: true,
+        updatedAt: Date.now()
       });
     });
     if (!out.length) return this.flash('No rows recognised');
@@ -499,6 +556,108 @@ class Component extends DCLogic {
     out.forEach(e => map.set(e.id, e));
     this.setState({ entries: [...map.values()] });
     this.flash(out.length + ' rows imported');
+    this.syncIfConnected();
+  }
+
+  // ---- GitHub cloud sync (device-flow OAuth) ----
+  setSync(patch) { this.setState(s => ({ ...s, ...patch })); }
+
+  b64Enc(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
+  }
+  b64Dec(b64) {
+    const clean = b64.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(clean + '='.repeat((4 - clean.length % 4) % 4));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  async connectSync() {
+    const token = this.state.syncToken.trim();
+    if (!token) return this.flash('Paste your access token first');
+    this.setState({ syncStatus: 'connecting', syncMsg: 'Connecting…' });
+    try {
+      const u = await fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' } });
+      if (!u.ok) throw new Error('Token rejected (' + u.status + ') — check permissions & repo access');
+      const j = await u.json();
+      await store.meta('gh_token', token);
+      await store.meta('gh_user', j.login || '');
+      await store.meta('gh_repo_name', this.state.syncRepoName.trim() || 'wegovy-tracker-data');
+      this.setState({ syncStatus: 'connected', syncUser: j.login || '', syncMsg: 'Connected' });
+      this.flash('Connected to cloud sync');
+      this.syncNow();
+    } catch (e) {
+      this.setState({ syncStatus: 'off', syncMsg: 'Error: ' + e.message });
+      this.flash('Connect failed');
+    }
+  }
+  async disconnectSync() {
+    await store.meta('gh_token', null);
+    await store.meta('gh_user', null);
+    await store.meta('gh_last', null);
+    this.setState({ syncStatus: 'off', syncUser: '', syncMsg: 'Disconnected' });
+    this.flash('Cloud sync disconnected');
+  }
+  mergeEntries(remote, local) {
+    const map = new Map();
+    const add = e => {
+      const cur = map.get(e.id);
+      if (!cur) map.set(e.id, e);
+      else if ((e.updatedAt || 0) >= (cur.updatedAt || 0)) map.set(e.id, e);
+    };
+    (remote || []).forEach(add);
+    (local || []).forEach(add);
+    return [...map.values()];
+  }
+  async syncNow() {
+    const token = await store.meta('gh_token');
+    if (!token) return;
+    if (this._syncing) return;
+    this._syncing = true;
+    this.setState({ syncMsg: 'Syncing…' });
+    try {
+      const owner = await store.meta('gh_user');
+      const repo = (await store.meta('gh_repo_name')) || 'wegovy-tracker-data';
+      if (!owner || !repo) throw new Error('not configured');
+      const url = 'https://api.github.com/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo) + '/contents/data.json';
+      const H = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' };
+      const res = await fetch(url, { headers: H });
+      let remote = null, sha = null;
+      if (res.status === 200) {
+        const j = await res.json();
+        sha = j.sha;
+        try { remote = JSON.parse(this.b64Dec(j.content)); } catch (e) { remote = null; }
+      } else if (res.status !== 404) {
+        throw new Error('pull failed (' + res.status + ')');
+      }
+      const merged = this.mergeEntries(remote && remote.entries, this.state.entries);
+      this.setState({ entries: merged });
+      await store.put(merged);
+      const body = {
+        message: 'sync ' + new Date().toISOString(),
+        content: this.b64Enc(JSON.stringify({ version: 1, entries: merged, updatedAt: Date.now() }))
+      };
+      if (sha) body.sha = sha;
+      const p = await fetch(url, { method: 'PUT', headers: { ...H, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!p.ok) {
+        const e2 = await p.json().catch(() => ({}));
+        throw new Error((e2.message || 'push failed') + ' (' + p.status + ')');
+      }
+      const last = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      await store.meta('gh_last', last);
+      this.setState({ syncMsg: merged.length + ' entries · ' + last, syncLast: last });
+      this.flash('Synced ' + merged.length + ' entries');
+    } catch (e) {
+      this.setState({ syncMsg: 'Error: ' + e.message });
+    } finally { this._syncing = false; }
+  }
+  syncIfConnected() {
+    clearTimeout(this._syncT);
+    this._syncT = setTimeout(() => this.syncNow(), 1500);
   }
 
   buildChart(all) {
@@ -682,7 +841,24 @@ class Component extends DCLogic {
       onExport: () => this.exportCsv(),
       onImport: e => { const file = e.target.files && e.target.files[0]; if (file) this.importCsv(file); e.target.value = ''; },
       onNewPen: async () => { await store.meta('penLeft', PEN_CLICKS); this.setState({ penLeft: PEN_CLICKS }); this.flash('New pen · 300 clicks'); },
-      onPenEdit: async e => { const v = Math.max(0, Math.min(PEN_CLICKS, parseInt(e.target.value) || 0)); await store.meta('penLeft', v); this.setState({ penLeft: v }); }
+      onPenEdit: async e => { const v = Math.max(0, Math.min(PEN_CLICKS, parseInt(e.target.value) || 0)); await store.meta('penLeft', v); this.setState({ penLeft: v }); },
+      sync: {
+        off: this.state.syncStatus === 'off',
+        connecting: this.state.syncStatus === 'connecting',
+        on: this.state.syncStatus === 'connected',
+        badge: this.state.syncStatus === 'connected' ? 'ON' : this.state.syncStatus === 'connecting' ? 'CONNECTING' : 'OFF',
+        badgeColor: this.state.syncStatus === 'connected' ? '#2f7d7b' : this.state.syncStatus === 'connecting' ? '#d99a3c' : '#a09587',
+        user: this.state.syncUser,
+        msg: this.state.syncMsg,
+        last: this.state.syncLast,
+        token: this.state.syncToken,
+        repoName: this.state.syncRepoName,
+        onToken: e => this.setSync({ syncToken: e.target.value }),
+        onRepoName: e => this.setSync({ syncRepoName: e.target.value }),
+        onConnect: () => this.connectSync(),
+        onDisconnect: () => this.disconnectSync(),
+        onSyncNow: () => this.syncNow()
+      }
     };
   }
 }
