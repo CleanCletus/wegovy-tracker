@@ -167,6 +167,13 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 <sc-if value="{{ isLog }}" hint-placeholder-val="{{ false }}">
 <div style="animation:riseIn .3s ease both">
 
+<div style="display:flex;gap:4px;padding:4px;background:var(--chip2);border-radius:12px;margin-bottom:12px">
+<sc-for list="{{ modeToggle }}" as="m" hint-placeholder-count="2">
+<button onClick="{{ m.onClick }}" style="flex:1;border:none;border-radius:9px;padding:10px 0;cursor:pointer;font:600 12.5px/1 'Instrument Sans',sans-serif;background:{{ m.bg }};color:{{ m.fg }};transition:all .18s ease">{{ m.label }}</button>
+</sc-for>
+</div>
+
+<sc-if value="{{ isDoseMode }}" hint-placeholder-val="{{ true }}">
 <section style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 16px">
 <div style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3)">Dose</div>
 <div style="margin-top:14px;display:flex;align-items:center;justify-content:center;gap:16px">
@@ -185,6 +192,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </sc-for>
 </div>
 </section>
+</sc-if>
 
 <section style="margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px">
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -230,7 +238,9 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </sc-if>
 <button onClick="{{ onSave }}" style="flex:1;padding:15px;border-radius:12px;border:none;background:var(--teal);color:var(--on-teal);font:600 14px/1 'Instrument Sans',sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(47,125,123,.24)" style-hover="background:var(--teal-hover)">{{ saveLabel }}</button>
 </div>
+<sc-if value="{{ isDoseMode }}" hint-placeholder-val="{{ true }}">
 <p style="margin:12px 4px 0;font:400 11px/1.5 'Instrument Sans',sans-serif;color:var(--ink3)">75 clicks = 2.4 mg on the multi-dose FlexTouch pen. Saving deducts clicks from the active pen.</p>
+</sc-if>
 
 </div>
 </sc-if>
@@ -248,7 +258,9 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div>
 </div>
 <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+<sc-if value="{{ e.hasDose }}" hint-placeholder-val="{{ false }}">
 <span style="padding:4px 9px;border-radius:16px;background:var(--teal-soft);color:var(--teal);font:500 10.5px/1 'JetBrains Mono',monospace">{{ e.dose }}</span>
+</sc-if>
 <sc-for list="{{ e.tags }}" as="t" hint-placeholder-count="2">
 <span style="padding:4px 9px;border-radius:16px;background:var(--amber-bg);color:var(--amber-ink);font:500 10.5px/1 'Instrument Sans',sans-serif">{{ t.label }}</span>
 </sc-for>
@@ -434,6 +446,7 @@ class Component extends DCLogic {
     tipIdx: null,
     toast: '',
     loaded: false,
+    formMode: 'dose',
     form: this.blankForm(),
     syncStatus: 'off',
     syncUser: '',
@@ -445,7 +458,7 @@ class Component extends DCLogic {
   };
 
   blankForm() {
-    return { id: null, date: iso(new Date()), clicks: 8, weight: '', noise: null, symptoms: [], notes: '', editing: false };
+    return { id: null, date: iso(new Date()), clicks: 8, weight: '', noise: null, symptoms: [], notes: '', editing: false, mode: (this.state && this.state.formMode) || 'dose' };
   }
 
   async componentDidMount() {
@@ -480,16 +493,20 @@ class Component extends DCLogic {
 
   setForm(patch) { this.setState(s => ({ form: { ...s.form, ...patch } })); }
 
+  setMode(m) { this.setState({ formMode: m }); this.setForm({ mode: m }); }
+
   async save() {
     const f = this.state.form;
+    const isWeight = f.mode === 'weight';
+    if (isWeight && f.weight === '') return this.flash('Enter a weight first');
     const mg = +(f.clicks * MG_PER_CLICK).toFixed(3);
     const entry = {
       id: f.id || 'e-' + Date.now(),
       date: f.date,
       weight_kg: f.weight === '' ? null : parseFloat(f.weight),
-      dose_clicks: f.clicks,
-      dose_mg: mg,
-      dose_label: mg.toFixed(2) + ' mg',
+      dose_clicks: isWeight ? null : f.clicks,
+      dose_mg: isWeight ? null : mg,
+      dose_label: isWeight ? '' : mg.toFixed(2) + ' mg',
       food_noise: f.noise,
       gi_symptoms: f.symptoms,
       notes: f.notes,
@@ -497,17 +514,18 @@ class Component extends DCLogic {
       updatedAt: Date.now()
     };
     const prev = this.state.entries.find(e => e.id === entry.id);
-    const spent = prev ? f.clicks - (prev.dose_clicks || 0) : f.clicks;
-    const penLeft = Math.max(0, this.state.penLeft - spent);
+    const spent = isWeight ? 0 : (prev ? f.clicks - (prev.dose_clicks || 0) : f.clicks);
+    const penLeft = isWeight ? this.state.penLeft : Math.max(0, this.state.penLeft - spent);
     await store.put([entry]);
     await store.meta('penLeft', penLeft);
     this.setState(s => ({
       entries: [...s.entries.filter(e => e.id !== entry.id), entry],
       penLeft,
+      formMode: isWeight ? 'weight' : 'dose',
       form: this.blankForm(),
       view: 'dashboard'
     }));
-    this.flash(prev ? 'Entry updated' : 'Logged · ' + mg.toFixed(2) + ' mg');
+    this.flash(prev ? 'Entry updated' : (isWeight ? 'Logged weight · ' + (entry.weight_kg != null ? entry.weight_kg.toFixed(2) : '—') + ' kg' : 'Logged · ' + mg.toFixed(2) + ' mg'));
     this.syncIfConnected();
   }
 
@@ -523,9 +541,11 @@ class Component extends DCLogic {
   }
 
   edit(e) {
+    const isWeight = e.dose_clicks == null && !e.dose_label;
     this.setState({
       view: 'log',
-      form: { id: e.id, date: e.date, clicks: e.dose_clicks || 0, weight: e.weight_kg == null ? '' : String(e.weight_kg), noise: e.food_noise, symptoms: e.gi_symptoms || [], notes: e.notes || '', editing: true }
+      formMode: isWeight ? 'weight' : 'dose',
+      form: { id: e.id, date: e.date, clicks: e.dose_clicks || 0, weight: e.weight_kg == null ? '' : String(e.weight_kg), noise: e.food_noise, symptoms: e.gi_symptoms || [], notes: e.notes || '', editing: true, mode: isWeight ? 'weight' : 'dose' }
     });
   }
 
@@ -768,7 +788,7 @@ class Component extends DCLogic {
     const latest = withW[withW.length - 1];
     const first = withW[0];
     const firstNew = withW.find(e => !e.is_historical);
-    const lastEntry = all[all.length - 1];
+    const lastDose = [...all].reverse().find(e => e.dose_mg != null);
     const f = this.state.form;
     const view = this.state.view;
 
@@ -786,9 +806,9 @@ class Component extends DCLogic {
       { label: 'Since restart', value: restartChange == null ? '—' : signed(restartChange), unit: 'kg',
         color: restartChange == null ? 'var(--ink3)' : restartChange < 0 ? 'var(--green)' : 'var(--red)',
         sub: firstNew ? 'since ' + fmtDate(firstNew.date) : 'not started yet' },
-      { label: 'Current dose', value: lastEntry && lastEntry.dose_mg != null ? lastEntry.dose_mg.toFixed(2) : '—', unit: 'mg',
+      { label: 'Current dose', value: lastDose && lastDose.dose_mg != null ? lastDose.dose_mg.toFixed(2) : '—', unit: 'mg',
         color: 'var(--teal)',
-        sub: lastEntry && lastEntry.dose_clicks ? lastEntry.dose_clicks + ' clicks' : 'no dose logged' }
+        sub: lastDose && lastDose.dose_clicks ? lastDose.dose_clicks + ' clicks' : 'no dose logged' }
     ];
 
     const ranges = [90, 180, 0].map(r => ({
@@ -803,7 +823,7 @@ class Component extends DCLogic {
       left: penLeft,
       mgLeft: (penLeft * MG_PER_CLICK).toFixed(1),
       pct: Math.max(0, Math.min(100, (penLeft / PEN_CLICKS) * 100)).toFixed(1) + '%',
-      doses: lastEntry && lastEntry.dose_clicks ? '~' + Math.floor(penLeft / lastEntry.dose_clicks) + ' doses at current' : 'set a dose to estimate'
+      doses: lastDose && lastDose.dose_clicks ? '~' + Math.floor(penLeft / lastDose.dose_clicks) + ' doses at current' : 'set a dose to estimate'
     };
 
     const noiseScale = [1, 2, 3, 4, 5].map(n => ({
@@ -846,6 +866,7 @@ class Component extends DCLogic {
         delta: d == null ? '' : (d > 0 ? '+' : '') + d.toFixed(2),
         deltaColor: d == null ? 'var(--ink3)' : d < 0 ? 'var(--green)' : 'var(--red)',
         dose: e.dose_label + (e.dose_clicks ? ' · ' + e.dose_clicks + ' clicks' : ''),
+        hasDose: !!e.dose_label,
         tags: (e.gi_symptoms || []).map(t => ({ label: t })),
         noise: e.food_noise,
         notes: e.notes,
@@ -858,22 +879,30 @@ class Component extends DCLogic {
       };
     });
 
-    const tabs = [['dashboard', 'Dashboard'], ['log', 'Log dose'], ['history', 'History']].map(([k, label]) => ({
+    const tabs = [['dashboard', 'Dashboard'], ['log', 'Log'], ['history', 'History']].map(([k, label]) => ({
       label,
       bg: view === k ? 'var(--pill)' : 'transparent',
       fg: view === k ? 'var(--on-pill)' : 'var(--ink2)',
       onClick: () => this.setState({ view: k })
     }));
 
+    const modeToggle = [['weight', 'Weight'], ['dose', 'Dose']].map(([k, label]) => ({
+      label,
+      bg: f.mode === k ? 'var(--pill)' : 'transparent',
+      fg: f.mode === k ? 'var(--on-pill)' : 'var(--ink2)',
+      onClick: () => this.setMode(k)
+    }));
+
     return {
       headerKicker: view === 'log' ? 'New entry' : view === 'history' ? 'All entries' : 'Semaglutide restart',
-      headerTitle: view === 'log' ? 'Log a dose' : view === 'history' ? 'History' : 'Dashboard',
+      headerTitle: view === 'log' ? (f.mode === 'weight' ? 'Log weight' : 'Log a dose') : view === 'history' ? 'History' : 'Dashboard',
       todayLabel: fmtDate(iso(new Date())),
       isDashboard: view === 'dashboard', isLog: view === 'log', isHistory: view === 'history',
-      statCards, ranges, pen, noiseScale, symptomChips, presets, history, tabs,
+      isDoseMode: f.mode === 'dose',
+      statCards, ranges, pen, noiseScale, symptomChips, presets, history, tabs, modeToggle,
       chart: this.buildChart(withW),
       toast: this.state.toast,
-      saveLabel: f.editing ? 'Update entry' : 'Save entry',
+      saveLabel: f.editing ? 'Update entry' : (f.mode === 'weight' ? 'Save weight' : 'Save entry'),
       form: {
         ...f,
         mg: (f.clicks * MG_PER_CLICK).toFixed(2),
