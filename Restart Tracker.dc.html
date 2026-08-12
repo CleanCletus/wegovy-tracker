@@ -5,6 +5,57 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="./support.js"></script>
 <script>try{document.documentElement.dataset.theme=(matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light'}catch(e){}</script>
+<script>
+// Keep focus off any input when the app opens. Browsers (Chrome on desktop,
+// Safari on iPhone) restore focus to the last-used field — e.g. the "Correct
+// count" box under Pen supply — which pops the keyboard on mobile. This blurs
+// focus whenever it lands in a field BEFORE the user actually interacts, and
+// stops guarding the moment they do, so the app just opens pointing at nothing.
+(function () {
+  var armed = true;
+  function blurEl(el) {
+    if (el && el !== document.body && el !== document.documentElement && typeof el.blur === 'function') el.blur();
+    var sel = window.getSelection && window.getSelection();
+    if (sel && typeof sel.removeAllRanges === 'function') sel.removeAllRanges();
+  }
+  function clearFocused() { blurEl(document.activeElement); }
+  // focusin fires whenever ANY element gains focus — including browser-triggered
+  // focus restoration that can happen well after page load. Blur it (deferred so
+  // we only clear focus that stuck, never fighting a real user action).
+  function maybeBlur(e) {
+    if (!armed) return;
+    var t = e.target;
+    setTimeout(function () { if (document.activeElement === t) blurEl(t); }, 0);
+  }
+  function onShow() {
+    if (!armed) return;
+    clearFocused();
+    setTimeout(clearFocused, 0);
+  }
+  function arm() { armed = true; }
+  function disarm() { armed = false; }
+
+  // 1) Instant: blur any focus that lands in a field before real user interaction.
+  document.addEventListener('focusin', maybeBlur, true);
+  // 2) Catch-all: also poll the focused element for a short window after load —
+  //    some engines restore focus without dispatching focus events.
+  var iv = setInterval(function () { if (armed) clearFocused(); else clearInterval(iv); }, 150);
+  setTimeout(function () { clearInterval(iv); }, 8000);
+  // 3) Reload / back-forward-cache restores.
+  window.addEventListener('pageshow', onShow);
+  // 4) App brought back to the foreground (e.g. iOS resuming a home-screen PWA
+  //    that had focus preserved in a field).
+  window.addEventListener('focus', onShow);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) arm();   // re-arm while backgrounded so returning clears preserved focus
+    else onShow();
+  });
+  // 5) Once the user actually interacts, stop guarding so tapping/typing works normally.
+  window.addEventListener('pointerdown', disarm);
+  window.addEventListener('touchstart', disarm);
+  window.addEventListener('keydown', disarm);
+})();
+</script>
 </head>
 <body>
 <x-dc>
@@ -122,11 +173,16 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div>
 </section>
 
-<section style="margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 14px">
-<div style="display:flex;align-items:center;justify-content:space-between">
-<div style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3)">Cloud sync</div>
+<section style="margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden">
+<button onClick="{{ sync.onToggle }}" title="Cloud sync — tap to show or hide" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;border:none;background:transparent;cursor:pointer;padding:13px 14px;text-align:left;color:inherit" style-hover="background:var(--chip)">
+<span style="display:flex;align-items:center;gap:8px">
+<span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3)">Cloud sync</span>
 <span style="font:500 10px/1 'JetBrains Mono',monospace;color:{{ sync.badgeColor }}">{{ sync.badge }}</span>
-</div>
+</span>
+<span style="font:500 10px/1 'JetBrains Mono',monospace;color:var(--ink2)">{{ sync.toggleLabel }}</span>
+</button>
+<sc-if value="{{ sync.expanded }}" hint-placeholder-val="{{ false }}">
+<div style="padding:0 14px 15px">
 
 <sc-if value="{{ sync.off }}" hint-placeholder-val="{{ true }}">
 <p style="margin:11px 0 0;font:400 11.5px/1.5 'Instrument Sans',sans-serif;color:var(--ink2)">Back up your entries to a private GitHub repo so your phone and computer stay in sync. Free and private.</p>
@@ -157,6 +213,48 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 <div style="display:flex;gap:8px;margin-top:12px">
 <button onClick="{{ sync.onSyncNow }}" style="flex:1;padding:11px;border-radius:11px;border:none;background:var(--teal);color:var(--on-teal);font:600 12.5px/1 'Instrument Sans',sans-serif;cursor:pointer" style-hover="background:var(--teal-hover)">Sync now</button>
 <button onClick="{{ sync.onDisconnect }}" style="flex:1;padding:11px;border-radius:11px;border:1px solid var(--line);background:var(--card);color:var(--red2);font:500 12.5px/1 'Instrument Sans',sans-serif;cursor:pointer" style-hover="border-color:var(--red2)">Disconnect</button>
+</div>
+</sc-if>
+
+<div style="margin:16px 0 0;height:1px;background:var(--line)"></div>
+<div style="margin-top:14px">
+<span style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3)">Google Sheets backup</span>
+<span style="font:500 10px/1 'JetBrains Mono',monospace;color:{{ gs.badgeColor }};margin-left:6px">{{ gs.badge }}</span>
+</div>
+
+<sc-if value="{{ gs.off }}" hint-placeholder-val="{{ true }}">
+<p style="margin:11px 0 0;font:400 11.5px/1.5 'Instrument Sans',sans-serif;color:var(--ink2)">Extra backup to a Google Sheet — human-readable rows plus a lossless JSON copy. Needs a free Apps Script URL (see setup file).</p>
+<div style="margin-top:12px">
+<label style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3)">Apps Script URL</label>
+<input type="text" placeholder="https://script.google.com/macros/s/…/exec" value="{{ gs.url }}" onChange="{{ gs.onUrl }}" style="width:100%;margin-top:6px;padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--chip);font:500 12px 'JetBrains Mono',monospace;color:var(--ink)">
+</div>
+<div style="margin-top:10px">
+<label style="font:500 9.5px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3)">Passcode (optional — must match the script)</label>
+<input type="password" placeholder="leave blank if the script has none" value="{{ gs.secret }}" onChange="{{ gs.onSecret }}" style="width:100%;margin-top:6px;padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--chip);font:500 12px 'JetBrains Mono',monospace;color:var(--ink)">
+</div>
+<button onClick="{{ gs.onConnect }}" style="margin-top:12px;width:100%;padding:12px;border-radius:11px;border:none;background:var(--teal);color:var(--on-teal);font:600 13px/1 'Instrument Sans',sans-serif;cursor:pointer" style-hover="background:var(--teal-hover)">Connect</button>
+<sc-if value="{{ gs.msg }}">
+<p style="margin:10px 0 0;font:400 11px/1.4 'Instrument Sans',sans-serif;color:var(--red)">{{ gs.msg }}</p>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{ gs.connecting }}" hint-placeholder-val="{{ false }}">
+<p style="margin:11px 0 0;font:400 11.5px/1.5 'Instrument Sans',sans-serif;color:var(--ink2)">Connecting…</p>
+</sc-if>
+
+<sc-if value="{{ gs.on }}" hint-placeholder-val="{{ false }}">
+<div style="margin-top:12px;display:flex;align-items:center;gap:8px">
+<span style="width:8px;height:8px;border-radius:50%;background:var(--green);flex:none"></span>
+<span style="font:500 12px/1.4 'Instrument Sans',sans-serif;color:var(--ink)">Google Sheets backup on</span>
+</div>
+<div style="margin-top:7px;font:400 11.5px/1.5 'Instrument Sans',sans-serif;color:var(--ink2)">{{ gs.msg }}</div>
+<div style="display:flex;gap:8px;margin-top:12px">
+<button onClick="{{ gs.onBackup }}" style="flex:1;padding:11px;border-radius:11px;border:none;background:var(--teal);color:var(--on-teal);font:600 12.5px/1 'Instrument Sans',sans-serif;cursor:pointer" style-hover="background:var(--teal-hover)">Back up now</button>
+<button onClick="{{ gs.onRestore }}" style="flex:1;padding:11px;border-radius:11px;border:1px solid var(--line);background:var(--card);color:var(--ink2);font:500 12.5px/1 'Instrument Sans',sans-serif;cursor:pointer" style-hover="border-color:var(--ink2)">Restore</button>
+<button onClick="{{ gs.onDisconnect }}" style="flex:1;padding:11px;border-radius:11px;border:1px solid var(--line);background:var(--card);color:var(--red2);font:500 12.5px/1 'Instrument Sans',sans-serif;cursor:pointer" style-hover="border-color:var(--red2)">Disconnect</button>
+</div>
+</sc-if>
+
 </div>
 </sc-if>
 </section>
@@ -454,6 +552,12 @@ class Component extends DCLogic {
     syncLast: '',
     syncToken: '',
     syncRepoName: 'wegovy-tracker-data',
+    syncOpen: false,
+    gsUrl: '',
+    gsSecret: '',
+    gsStatus: 'off',
+    gsMsg: '',
+    gsLast: '',
     theme: 'system'
   };
 
@@ -462,6 +566,8 @@ class Component extends DCLogic {
   }
 
   async componentDidMount() {
+    this.preventAutoFocus();
+    window.addEventListener('pageshow', () => this.preventAutoFocus());
     await store.init();
     this._deleted = (await store.meta('gh_deleted')) || {};
     let entries = await store.all();
@@ -473,6 +579,7 @@ class Component extends DCLogic {
     const mql = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
     if (mql && mql.addEventListener) mql.addEventListener('change', () => this.applyTheme(this.state.theme));
     this.setState({ entries, penLeft: pen == null ? PEN_CLICKS : pen, loaded: true });
+    this.preventAutoFocus();
     const tok = await store.meta('gh_token');
     if (tok) {
       const user = await store.meta('gh_user');
@@ -481,6 +588,31 @@ class Component extends DCLogic {
       this.setState({ syncStatus: 'connected', syncUser: user || '', syncRepoName: repo || 'wegovy-tracker-data', syncLast: last || '', syncToken: tok });
       this.syncNow();
     }
+    const gsu = await store.meta('gs_url');
+    if (gsu) {
+      const gss = (await store.meta('gs_secret')) || '';
+      const gsl = (await store.meta('gs_last')) || '';
+      this.setState({ gsUrl: gsu, gsSecret: gss, gsStatus: 'connected', gsMsg: gsl ? 'Backed up · ' + gsl : 'Connected' });
+      this.gsPing(gsu, gss).then(j => {
+        if (j && j.ok) this.setState({ gsMsg: 'Backup sheet has ' + (j.count != null ? j.count + ' entries' : 'a copy') });
+      }).catch(() => {});
+    }
+  }
+
+  // Clear focus so the app never opens "pointing at" an input (the browser can
+  // restore focus to the last-used field and pop the keyboard on mobile).
+  preventAutoFocus() {
+    const blur = () => {
+      const el = document.activeElement;
+      if (el && el !== document.body && el !== document.documentElement && typeof el.blur === 'function') el.blur();
+      const sel = window.getSelection && window.getSelection();
+      if (sel && typeof sel.removeAllRanges === 'function') sel.removeAllRanges();
+    };
+    blur();
+    requestAnimationFrame(blur);
+    setTimeout(blur, 0);
+    setTimeout(blur, 150);
+    setTimeout(blur, 450);
   }
 
   flash(msg) {
@@ -728,6 +860,94 @@ class Component extends DCLogic {
   syncIfConnected() {
     clearTimeout(this._syncT);
     this._syncT = setTimeout(() => this.syncNow(), 1500);
+    clearTimeout(this._gsT);
+    this._gsT = setTimeout(() => this.gsBackupNow(), 2200);
+  }
+
+  // ---- Google Sheets backup (Apps Script web app) ----
+  async gsPing(url, secret) {
+    url = url || (await store.meta('gs_url'));
+    secret = secret == null ? ((await store.meta('gs_secret')) || '') : secret;
+    if (!url) return null;
+    const q = '?action=status' + (secret ? '&secret=' + encodeURIComponent(secret) : '');
+    const r = await fetch(url + q);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error((j.error || 'backup not reachable') + (r.status ? ' (' + r.status + ')' : ''));
+    return j;
+  }
+  async connectGs() {
+    const url = this.state.gsUrl.trim();
+    if (!url) return this.flash('Paste your Apps Script URL first');
+    if (!/^https:\/\/script\.google\.com\/macros\/s\//.test(url)) return this.flash('That does not look like an Apps Script URL');
+    const secret = this.state.gsSecret.trim();
+    this.setState({ gsStatus: 'connecting', gsMsg: 'Connecting…' });
+    try {
+      const j = await this.gsPing(url, secret);
+      await store.meta('gs_url', url);
+      await store.meta('gs_secret', secret);
+      this.setState({ gsStatus: 'connected', gsMsg: j.count != null ? 'Backup sheet has ' + j.count + ' entries' : 'Connected' });
+      this.flash('Sheets backup connected');
+      this.gsBackupNow();
+    } catch (e) {
+      this.setState({ gsStatus: 'off', gsMsg: 'Error: ' + e.message });
+      this.flash('Connect failed');
+    }
+  }
+  async disconnectGs() {
+    await store.meta('gs_url', null);
+    await store.meta('gs_secret', null);
+    await store.meta('gs_last', null);
+    this.setState({ gsStatus: 'off', gsUrl: '', gsSecret: '', gsMsg: '' });
+    this.flash('Sheets backup disconnected');
+  }
+  async gsBackupNow() {
+    const url = await store.meta('gs_url');
+    if (!url) return;
+    if (this._gsBusy) return;
+    this._gsBusy = true;
+    this.setState({ gsMsg: 'Backing up…' });
+    try {
+      const secret = (await store.meta('gs_secret')) || '';
+      const payload = { version: 2, entries: this.state.entries, deleted: this._deleted || {}, updatedAt: Date.now() };
+      if (secret) payload.secret = secret;
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error((j.error || 'backup failed') + (r.status ? ' (' + r.status + ')' : ''));
+      const last = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      await store.meta('gs_last', last);
+      this.setState({ gsMsg: 'Backed up ' + (j.saved != null ? j.saved : this.state.entries.length) + ' entries · ' + last });
+    } catch (e) {
+      this.setState({ gsMsg: 'Error: ' + e.message });
+    } finally { this._gsBusy = false; }
+  }
+  async gsRestore() {
+    if (this._gsConfirm !== true) {
+      this._gsConfirm = true;
+      this.forceUpdate();
+      this.flash('Tap again to restore from backup');
+      setTimeout(() => { if (this._gsConfirm === true) { this._gsConfirm = false; this.forceUpdate(); } }, 3500);
+      return;
+    }
+    this._gsConfirm = false;
+    const url = await store.meta('gs_url');
+    if (!url) return;
+    this.setState({ gsMsg: 'Restoring…' });
+    try {
+      const secret = (await store.meta('gs_secret')) || '';
+      const q = '?action=read' + (secret ? '&secret=' + encodeURIComponent(secret) : '');
+      const r = await fetch(url + q);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok || !j.entries) throw new Error((j.error || 'no backup found') + (r.status ? ' (' + r.status + ')' : ''));
+      const merged = this.mergeEntries(j.entries, this.state.entries, j.deleted || {});
+      this._deleted = j.deleted || this._deleted || {};
+      await store.meta('gh_deleted', this._deleted);
+      await store.put(merged);
+      this.setState({ entries: merged, gsMsg: 'Restored ' + merged.length + ' entries from backup' });
+      this.flash('Restored from Google Sheets backup');
+      this.gsBackupNow();
+    } catch (e) {
+      this.setState({ gsMsg: 'Error: ' + e.message });
+    }
   }
 
   buildChart(all) {
@@ -894,7 +1114,7 @@ class Component extends DCLogic {
     }));
 
     return {
-      headerKicker: view === 'log' ? 'New entry' : view === 'history' ? 'All entries' : 'Semaglutide restart',
+      headerKicker: view === 'log' ? 'New entry' : view === 'history' ? 'All entries' : 'Wegovy tracker',
       headerTitle: view === 'log' ? (f.mode === 'weight' ? 'Log weight' : 'Log a dose') : view === 'history' ? 'History' : 'Dashboard',
       todayLabel: fmtDate(iso(new Date())),
       isDashboard: view === 'dashboard', isLog: view === 'log', isHistory: view === 'history',
@@ -932,11 +1152,30 @@ class Component extends DCLogic {
         last: this.state.syncLast,
         token: this.state.syncToken,
         repoName: this.state.syncRepoName,
+        expanded: this.state.syncOpen,
+        toggleLabel: this.state.syncOpen ? 'Hide ▴' : 'Show ▾',
+        onToggle: () => this.setState(s => ({ syncOpen: !s.syncOpen })),
         onToken: e => this.setSync({ syncToken: e.target.value }),
         onRepoName: e => this.setSync({ syncRepoName: e.target.value }),
         onConnect: () => this.connectSync(),
         onDisconnect: () => this.disconnectSync(),
         onSyncNow: () => this.syncNow()
+      },
+      gs: {
+        url: this.state.gsUrl,
+        secret: this.state.gsSecret,
+        off: this.state.gsStatus === 'off',
+        connecting: this.state.gsStatus === 'connecting',
+        on: this.state.gsStatus === 'connected',
+        badge: this.state.gsStatus === 'connected' ? 'ON' : this.state.gsStatus === 'connecting' ? 'CONNECTING' : 'OFF',
+        badgeColor: this.state.gsStatus === 'connected' ? 'var(--teal)' : this.state.gsStatus === 'connecting' ? 'var(--amber)' : 'var(--ink3)',
+        msg: this.state.gsMsg,
+        onUrl: e => this.setSync({ gsUrl: e.target.value }),
+        onSecret: e => this.setSync({ gsSecret: e.target.value }),
+        onConnect: () => this.connectGs(),
+        onDisconnect: () => this.disconnectGs(),
+        onBackup: () => this.gsBackupNow(),
+        onRestore: () => this.gsRestore()
       },
       theme: {
         label: this.themeLabel(),
